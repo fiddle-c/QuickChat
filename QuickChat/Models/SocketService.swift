@@ -7,6 +7,7 @@
 
 import Foundation
 import SocketIO
+
 @Observable
 class SocketService {
     static let shared = SocketService()
@@ -17,7 +18,7 @@ class SocketService {
     var isConnected = false
     var conversations: [Conversation] = []
     var messages: [String: [Message]] = [:]
-    
+    var isClientTyping: Bool = false
     // Queue for pending emits
     private var pendingEmits: [() -> Void] = []
     
@@ -46,7 +47,7 @@ class SocketService {
         // Connection events
         socket?.on(clientEvent: .connect) { [weak self] data, ack in
             print("✅ Socket connected")
-            DispatchQueue.main.async {
+            Task {
                 self?.isConnected = true
                 self?.processPendingEmits()  // Process queued emits
             }
@@ -54,7 +55,7 @@ class SocketService {
         
         socket?.on(clientEvent: .disconnect) { [weak self] data, ack in
             print("❌ Socket disconnected:", data)
-            DispatchQueue.main.async {
+            Task {
                 self?.isConnected = false
             }
         }
@@ -109,6 +110,18 @@ class SocketService {
                 }
             } catch {
                 print("❌ Error parsing history:", error)
+            }
+            socket?.on("client_typing") { [weak self] data, ack in
+                print("detecing typing: \n", data)
+                guard let self else { return }
+                self.isClientTyping = true
+                print("client typing: \(isClientTyping)")
+            }
+            socket?.on("client_stop_typing") { [weak self] data, ack in
+                print("detecing typing: \n", data)
+                guard let self else { return }
+                self.isClientTyping = false
+                print("client stopped typing: \(isClientTyping)")
             }
         }
         
@@ -207,4 +220,6 @@ class SocketService {
         print("loading conversations")
         safeEmit("load_conversations", [:]) // if your server requires a payload; otherwise emit without payload using another overload
     }
+    
+ 
 }

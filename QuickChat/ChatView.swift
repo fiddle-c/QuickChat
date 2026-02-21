@@ -5,16 +5,16 @@ import SwiftUI
 struct ChatView: View {
     let agent: Agent
     let clientName: String
-    
-    @State private var socketService = SocketService.shared
+    @Binding var socketService: SocketService
+
     @State private var messageText = ""
     @State private var scrollProxy: ScrollViewProxy?
     @FocusState private var isInputFocused: Bool
-    
+    @State var backgroundColor = Color(UIColor.systemBackground)
     var messages: [Message] {
         socketService.messages[clientName] ?? []
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             // Messages
@@ -55,8 +55,11 @@ struct ChatView: View {
                 }
                 .disabled(messageText.isEmpty)
             }
+            .onChange(of: socketService.isClientTyping) { oldValue, newValue in
+                backgroundColor = newValue == false ? .red : .blue
+            }
             .padding()
-            .background(Color(UIColor.systemBackground))
+            .background(backgroundColor)
         }
         .navigationTitle(clientName)
         .navigationBarTitleDisplayMode(.inline)
@@ -109,5 +112,5 @@ struct ChatView: View {
 }
 
 #Preview {
-    ChatView(agent: Agent(), clientName: "bubbles")
+//    ChatView(agent: Agent(), clientName: "bubbles", socketService: SocketService().shared)
 }

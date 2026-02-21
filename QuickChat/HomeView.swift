@@ -10,7 +10,7 @@ import SwiftUI
 
 struct HomeView: View {
     let agent: Agent
-    @State private var socketService = SocketService.shared
+    @State private var socketService: SocketService = SocketService.shared
     @State private var showingLogoutAlert = false
     @State private var isLoggingOut = false
     @Environment(\.dismiss) private var dismiss
@@ -41,7 +41,8 @@ struct HomeView: View {
                             ForEach(socketService.conversations) { conversation in
                                 NavigationLink(destination: ChatView(
                                     agent: agent,
-                                    clientName: conversation.clientName
+                                    clientName: conversation.clientName,
+                                    socketService: $socketService
                                 )) {
                                     ConversationRow(conversation: conversation)
                                 }
@@ -57,6 +58,8 @@ struct HomeView: View {
                     }
                 }
             }
+            .navigationBarBackButtonHidden(true)
+
             .navigationTitle("Conversations")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -67,17 +70,6 @@ struct HomeView: View {
                     .foregroundColor(.red)
                 }
                 
-                ToolbarItem(placement: .navigationBarLeading) {
-                    HStack {
-                        Circle()
-                            .fill(socketService.isConnected ? Color.green : Color.red)
-                            .frame(width: 8, height: 8)
-                        
-                        Text(agent.username)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
             }
             .alert("Logout", isPresented: $showingLogoutAlert) {
                 Button("Cancel", role: .cancel) { }
@@ -97,7 +89,7 @@ struct HomeView: View {
             }
         }
         .onDisappear {
-            socketService.disconnect()
+//            socketService.disconnect()
         }
     }
     private func load_conversations() async {

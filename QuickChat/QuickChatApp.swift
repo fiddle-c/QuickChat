@@ -11,7 +11,7 @@ import SwiftUI
 struct QuickChatApp: App {
     var body: some Scene {
         WindowGroup {
-            RootView()
+            LoginView()
         }
     }
 }
