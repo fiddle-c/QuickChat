@@ -1,16 +1,16 @@
-
-
 import SwiftUI
 
 struct ChatView: View {
     let agent: Agent
     let clientName: String
-    @Binding var socketService: SocketService
+    @Bindable var socketService: SocketService
 
     @State private var messageText = ""
     @State private var scrollProxy: ScrollViewProxy?
     @FocusState private var isInputFocused: Bool
     @State var backgroundColor = Color(UIColor.systemBackground)
+    @State private var isTyping = false
+    @State private var typingWorkItem: DispatchWorkItem?
     var messages: [Message] {
         socketService.messages[clientName] ?? []
     }
@@ -20,13 +20,23 @@ struct ChatView: View {
             // Messages
             ScrollViewReader { proxy in
                 ScrollView {
+                  
                     LazyVStack(spacing: 12) {
+                        
                         ForEach(messages) { message in
+                            
                             MessageBubble(message: message, agentName: agent.username)
                                 .id(message.id)
+                           
+                            
+                        }
+                        if socketService.isClientTyping {
+                            TypingBubble(isAgent: false, name: clientName)
                         }
                     }
                     .padding()
+                   
+
                 }
                 .background(Color(UIColor.systemGroupedBackground))
                 .onAppear {
@@ -56,15 +66,59 @@ struct ChatView: View {
                 .disabled(messageText.isEmpty)
             }
             .onChange(of: socketService.isClientTyping) { oldValue, newValue in
-                backgroundColor = newValue == false ? .red : .blue
+                if newValue {
+                    scrollToBottom()
+                }
+            }
+            .onChange(of: messageText) { oldValue, newValue in
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                if trimmed.isEmpty {
+                    // If input is empty, stop typing immediately
+                    typingWorkItem?.cancel()
+                    if isTyping {
+                        socketService.stopTyping(clientName: clientName)
+                        isTyping = false
+                    }
+                } else {
+                    // If we just started typing, notify server once
+                    if !isTyping {
+                        socketService.typingListener(clientName: clientName)
+                        isTyping = true
+                    }
+                    // Debounce stop-typing until user pauses for 1.5s
+                    typingWorkItem?.cancel()
+                    let workItem = DispatchWorkItem {
+                        socketService.stopTyping(clientName: clientName)
+                        isTyping = false
+                    }
+                    typingWorkItem = workItem
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
+                }
             }
             .padding()
             .background(backgroundColor)
+        }
+        .onTapGesture {
+            UIApplication.shared.dismissKeyboard()
         }
         .navigationTitle(clientName)
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             loadMessages()
+        }
+        .onChange(of: isInputFocused) { oldValue, newValue in
+            if !newValue && isTyping {
+                typingWorkItem?.cancel()
+                socketService.stopTyping(clientName: clientName)
+                isTyping = false
+            }
+        }
+        .onDisappear {
+            if isTyping {
+                typingWorkItem?.cancel()
+                socketService.stopTyping(clientName: clientName)
+                isTyping = false
+            }
         }
     }
     
@@ -96,6 +150,13 @@ struct ChatView: View {
         // Send to server
         socketService.sendMessage(clientName: clientName, message: trimmedMessage)
         
+        // Ensure we send stop-typing when message is sent
+        if isTyping {
+            typingWorkItem?.cancel()
+            socketService.stopTyping(clientName: clientName)
+            isTyping = false
+        }
+        
         messageText = ""
         scrollToBottom()
     }
@@ -110,7 +171,13 @@ struct ChatView: View {
         }
     }
 }
-
+extension UIApplication {
+    func dismissKeyboard() {
+        sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+}
 #Preview {
 //    ChatView(agent: Agent(), clientName: "bubbles", socketService: SocketService().shared)
 }
+
+

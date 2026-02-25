@@ -47,12 +47,13 @@ struct LoginView: View {
                         
                         TextField("Username", text: $username)
                             .textFieldStyle(CustomTextFieldStyle())
+                            .foregroundStyle(.black)
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
                         
                         SecureField("Password", text: $password)
                             .textFieldStyle(CustomTextFieldStyle())
-                        
+                            .foregroundStyle(.black)
                         Button(action: handleLogin) {
                             if isLoading {
                                 ProgressView()

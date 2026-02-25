@@ -10,7 +10,7 @@ import SwiftUI
 
 struct HomeView: View {
     let agent: Agent
-    @State private var socketService: SocketService = SocketService.shared
+    @Bindable private var socketService: SocketService = SocketService.shared
     @State private var showingLogoutAlert = false
     @State private var isLoggingOut = false
     @Environment(\.dismiss) private var dismiss
@@ -42,7 +42,7 @@ struct HomeView: View {
                                 NavigationLink(destination: ChatView(
                                     agent: agent,
                                     clientName: conversation.clientName,
-                                    socketService: $socketService
+                                    socketService: socketService
                                 )) {
                                     ConversationRow(conversation: conversation)
                                 }

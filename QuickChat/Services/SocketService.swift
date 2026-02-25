@@ -9,9 +9,10 @@ import Foundation
 import SocketIO
 
 @Observable
+@MainActor
 class SocketService {
     static let shared = SocketService()
-    
+
     private var manager: SocketManager?
     private var socket: SocketIOClient?
     
@@ -49,6 +50,7 @@ class SocketService {
             print("✅ Socket connected")
             Task {
                 self?.isConnected = true
+                print("Processing pending emits after connect")
                 self?.processPendingEmits()  // Process queued emits
             }
         }
@@ -111,17 +113,22 @@ class SocketService {
             } catch {
                 print("❌ Error parsing history:", error)
             }
-            socket?.on("client_typing") { [weak self] data, ack in
-                print("detecing typing: \n", data)
-                guard let self else { return }
+        }
+        
+        // Client typing indicators
+        socket?.on("client_typing") { [weak self] data, ack in
+            guard let self else { return }
+            print("✍️ client_typing:", data)
+            DispatchQueue.main.async {
                 self.isClientTyping = true
-                print("client typing: \(isClientTyping)")
             }
-            socket?.on("client_stop_typing") { [weak self] data, ack in
-                print("detecing typing: \n", data)
-                guard let self else { return }
+        }
+        
+        socket?.on("client_stop_typing") { [weak self] data, ack in
+            guard let self else { return }
+            print("🛑 client_stop_typing:", data)
+            DispatchQueue.main.async {
                 self.isClientTyping = false
-                print("client stopped typing: \(isClientTyping)")
             }
         }
         
@@ -151,16 +158,19 @@ class SocketService {
                 timestamp: timestamp
             )
             
-            DispatchQueue.main.async {
+            Task {
                 if var msgs = self.messages[clientName] {
                     msgs.append(newMessage)
                     self.messages[clientName] = msgs
+                    
                 } else {
                     self.messages[clientName] = [newMessage]
                 }
             }
         }
     }
+    
+    
     
     // Process queued emits after connection
     private func processPendingEmits() {
@@ -200,6 +210,16 @@ class SocketService {
             }
         }
     }
+    func typingListener(clientName: String) {
+        print("typing detected (agent)")
+        safeEmit(SocketValues.agentTyping.rawValue, [SocketValues.clientName.rawValue: clientName, SocketValues.agentName.rawValue: "agent"]) // replace agent string with actual agent name if available
+    }
+    
+    func stopTyping(clientName: String) {
+        print("stop typing (agent)")
+        safeEmit(SocketValues.agentStopTyping.rawValue, [SocketValues.clientName.rawValue: clientName, SocketValues.agentName.rawValue: "agent"]) // replace agent string with actual agent name if available
+    }
+    
     
     func identify(userType: String, userName: String) {
         print("🔐 Identifying as \(userType): \(userName)")
@@ -222,4 +242,15 @@ class SocketService {
     }
     
  
+}
+
+
+enum SocketValues: String, CodingKey {
+    case load_history = "load_history"
+    case typing = "typing"
+    case stopTyping = "stop_typing"
+    case agentTyping = "agent_typing"
+    case agentStopTyping = "agent_stop_typing"
+    case clientName = "clientName"
+    case agentName = "agentName"
 }
