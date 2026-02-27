@@ -17,7 +17,7 @@ struct ConversationRow: View {
                 Circle()
                     .fill(
                         LinearGradient(
-                            colors: [Color(hex: "667eea"), Color(hex: "764ba2")],
+                            colors: [.quickPrimary, .quickSecondary],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
@@ -41,10 +41,7 @@ struct ConversationRow: View {
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
                 }
-                
-                Text("\(conversation.messageCount) messages")
-                    .font(.system(size: 15))
-                    .foregroundColor(.secondary)
+            
             }
         }
         .padding(.vertical, 12)

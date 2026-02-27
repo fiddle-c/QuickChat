@@ -4,39 +4,47 @@ struct ChatView: View {
     let agent: Agent
     let clientName: String
     @Bindable var socketService: SocketService
-
+    
     @State private var messageText = ""
     @State private var scrollProxy: ScrollViewProxy?
     @FocusState private var isInputFocused: Bool
     @State var backgroundColor = Color(UIColor.systemBackground)
     @State private var isTyping = false
     @State private var typingWorkItem: DispatchWorkItem?
+    @State private var typingTimer: Timer?
+    @State private var typingHeartbeatTimer: Timer?
+    @State private var isAgentTyping = false
+    
+    var isClientTyping: Bool {
+        socketService.typingClients[clientName] ?? false
+    }
+    
     var messages: [Message] {
         socketService.messages[clientName] ?? []
     }
-
+    
     var body: some View {
         VStack(spacing: 0) {
             // Messages
             ScrollViewReader { proxy in
                 ScrollView {
-                  
+                    
                     LazyVStack(spacing: 12) {
                         
                         ForEach(messages) { message in
                             
                             MessageBubble(message: message, agentName: agent.username)
                                 .id(message.id)
-                           
+                            
                             
                         }
-                        if socketService.isClientTyping {
+                        if isClientTyping {
                             TypingBubble(isAgent: false, name: clientName)
                         }
                     }
                     .padding()
-                   
-
+                    
+                    
                 }
                 .background(Color(UIColor.systemGroupedBackground))
                 .onAppear {
@@ -57,6 +65,10 @@ struct ChatView: View {
                     .cornerRadius(20)
                     .lineLimit(1...5)
                     .focused($isInputFocused)
+                    .onChange(of: messageText) { oldValue, newValue in
+                        handleTyping(text: newValue)
+                        
+                    }
                 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
@@ -65,34 +77,9 @@ struct ChatView: View {
                 }
                 .disabled(messageText.isEmpty)
             }
-            .onChange(of: socketService.isClientTyping) { oldValue, newValue in
+            .onChange(of: isClientTyping) { oldValue, newValue in
                 if newValue {
                     scrollToBottom()
-                }
-            }
-            .onChange(of: messageText) { oldValue, newValue in
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                if trimmed.isEmpty {
-                    // If input is empty, stop typing immediately
-                    typingWorkItem?.cancel()
-                    if isTyping {
-                        socketService.stopTyping(clientName: clientName)
-                        isTyping = false
-                    }
-                } else {
-                    // If we just started typing, notify server once
-                    if !isTyping {
-                        socketService.typingListener(clientName: clientName)
-                        isTyping = true
-                    }
-                    // Debounce stop-typing until user pauses for 1.5s
-                    typingWorkItem?.cancel()
-                    let workItem = DispatchWorkItem {
-                        socketService.stopTyping(clientName: clientName)
-                        isTyping = false
-                    }
-                    typingWorkItem = workItem
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
                 }
             }
             .padding()
@@ -106,20 +93,61 @@ struct ChatView: View {
         .onAppear {
             loadMessages()
         }
-        .onChange(of: isInputFocused) { oldValue, newValue in
-            if !newValue && isTyping {
-                typingWorkItem?.cancel()
-                socketService.stopTyping(clientName: clientName)
-                isTyping = false
-            }
-        }
         .onDisappear {
-            if isTyping {
-                typingWorkItem?.cancel()
-                socketService.stopTyping(clientName: clientName)
-                isTyping = false
+            // Stop typing when leaving chat
+            if isAgentTyping {
+                socketService.agentStopTyping(clientName: clientName, agentName: agent.username)
+            }
+            typingTimer?.invalidate()
+            typingHeartbeatTimer?.invalidate()
+        }
+    }
+
+    private func handleTyping(text: String) {
+        // If text is empty, stop typing entirely
+        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            stopTypingNow()
+            return
+        }
+
+        // If we just started typing, notify once and start heartbeat
+        if !isAgentTyping {
+            socketService.agentTyping(clientName: clientName, agentName: agent.username)
+            isAgentTyping = true
+            startTypingHeartbeat()
+        }
+
+        // Debounce stop-typing: if no changes for 2s, send stop
+        scheduleStopTypingDebounce()
+    }
+
+    private func startTypingHeartbeat() {
+        typingHeartbeatTimer?.invalidate()
+        typingHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor in
+                if isAgentTyping {
+                    socketService.agentTyping(clientName: clientName, agentName: agent.username)
+                }
             }
         }
+    }
+
+    private func scheduleStopTypingDebounce() {
+        typingTimer?.invalidate()
+        typingTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { _ in
+            Task { @MainActor in
+                stopTypingNow()
+            }
+        }
+    }
+
+    private func stopTypingNow() {
+        if isAgentTyping {
+            socketService.agentStopTyping(clientName: clientName, agentName: agent.username)
+            isAgentTyping = false
+        }
+        typingTimer?.invalidate()
+        typingHeartbeatTimer?.invalidate()
     }
     
     private func loadMessages() {
@@ -136,7 +164,7 @@ struct ChatView: View {
             id: Int(Date().timeIntervalSince1970 * 1000),
             clientName: clientName,
             message: trimmedMessage,
-            sender: "sender",
+            sender: "agent",
             timestamp: Date()
         )
         

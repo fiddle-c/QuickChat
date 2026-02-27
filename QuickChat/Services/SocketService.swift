@@ -12,6 +12,7 @@ import SocketIO
 @MainActor
 class SocketService {
     static let shared = SocketService()
+    var typingClients: [String: Bool] = [:]  // clientName -> isTyping
 
     private var manager: SocketManager?
     private var socket: SocketIOClient?
@@ -19,8 +20,9 @@ class SocketService {
     var isConnected = false
     var conversations: [Conversation] = []
     var messages: [String: [Message]] = [:]
-    var isClientTyping: Bool = false
     // Queue for pending emits
+    private var typingTimers: [String: Timer] = [:]  // Track typing timeouts
+
     private var pendingEmits: [() -> Void] = []
     
     private init() {}
@@ -117,20 +119,48 @@ class SocketService {
         
         // Client typing indicators
         socket?.on("client_typing") { [weak self] data, ack in
-            guard let self else { return }
             print("✍️ client_typing:", data)
+            guard let self, let dict = data[0] as? [String: Any],
+                  let clientName = dict["clientName"] as? String else {
+                return
+            }
+            
+            print("Client typing: clientName")
+            
+            
+            
             DispatchQueue.main.async {
-                self.isClientTyping = true
+                self.typingClients[clientName] = true
+                
+                // Cancel existing timer
+                self.typingTimers[clientName]?.invalidate()
+                
+                // Auto-hide after 3 seconds
+                self.typingTimers[clientName] = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: false) { [weak self] _ in
+                    DispatchQueue.main.async {
+                        self?.typingClients[clientName] = false
+                    }
+                }
             }
         }
         
+        
         socket?.on("client_stop_typing") { [weak self] data, ack in
-            guard let self else { return }
-            print("🛑 client_stop_typing:", data)
+            guard let self = self,
+                  let dict = data[0] as? [String: Any],
+                  let clientName = dict["clientName"] as? String else {
+                return
+            }
+            
+            print("⌨️ Client stopped typing:", clientName)
+            
             DispatchQueue.main.async {
-                self.isClientTyping = false
+                self.typingClients[clientName] = false
+                self.typingTimers[clientName]?.invalidate()
+                self.typingTimers[clientName] = nil
             }
         }
+        
         
         // Receive message
         socket?.on("receive_message") { [weak self] data, ack in
@@ -168,10 +198,19 @@ class SocketService {
                 }
             }
         }
+        
+        
     }
     
     
+    func agentTyping(clientName: String, agentName: String) {
+        safeEmit("agent_typing", ["clientName": clientName, "agentName": agentName])
+    }
     
+    // NEW: Agent stopped typing
+    func agentStopTyping(clientName: String, agentName: String) {
+        safeEmit("agent_stop_typing", ["clientName": clientName, "agentName": agentName])
+    }
     // Process queued emits after connection
     private func processPendingEmits() {
         print("📤 Processing \(pendingEmits.count) pending emits")

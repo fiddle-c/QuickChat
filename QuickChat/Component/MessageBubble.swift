@@ -24,7 +24,7 @@ struct MessageBubble: View {
                 
                 Text(message.message)
                     .padding(12)
-                    .background(message.isAgent ? Color(hex: "667eea") : Color.white)
+                    .background(message.isAgent ? .quickPrimary : Color.white)
                     .foregroundColor(message.isAgent ? .white : .primary)
                     .cornerRadius(16)
                     .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
